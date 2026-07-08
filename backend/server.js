@@ -110,6 +110,11 @@ app.use('/api/users', usersRouter);
 app.use('/api/videos', videosRouter);
 app.use('/api/notifications', notificationsRouter);
 
+// Root Status Endpoint
+app.get('/', (req, res) => {
+  res.send('VibeStream Backend Server is running successfully!');
+});
+
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
