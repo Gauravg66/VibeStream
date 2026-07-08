@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Bell, Check, CheckCheck, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function NotificationsDrawer({ isOpen, onClose, onRefreshNotifications }) {
   const { token, user } = useAuth();

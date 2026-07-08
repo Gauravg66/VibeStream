@@ -3,7 +3,7 @@ import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Clock, Eye, Calendar, UserPlus, Heart, MessageSquare, Send, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function VideoPlayer() {
   const { id } = useParams();

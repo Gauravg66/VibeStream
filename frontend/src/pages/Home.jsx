@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import VideoCard from '../components/VideoCard';
 import { Search, Compass, Clock, Flame, Star, AlertCircle, RefreshCw } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function Home() {
   const { token } = useAuth();

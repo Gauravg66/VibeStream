@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Clock, Bell, Star, Flame, LogOut, Video, Compass } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function Sidebar({ onOpenNotifications, unreadCount, onRefreshUnread }) {
   const { user, logout, watchLaterCount } = useAuth();
