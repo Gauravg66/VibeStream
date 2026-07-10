@@ -32,6 +32,30 @@ const UserSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Video'
   }],
+  watchLaterUnreadCount: {
+    type: Number,
+    default: 0
+  },
+  isCreator: {
+    type: Boolean,
+    default: false
+  },
+  channelName: {
+    type: String,
+    default: ''
+  },
+  channelDescription: {
+    type: String,
+    default: ''
+  },
+  subscribers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  subscriptions: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   notifications: [NotificationSchema]
 }, {
   timestamps: true

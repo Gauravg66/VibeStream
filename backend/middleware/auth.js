@@ -1,48 +1,51 @@
-import jwt from 'jsonwebtoken';
+import { getAuth, clerkClient } from '@clerk/express';
 import User from '../models/User.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'videostream_secret_key_123';
 
 export const requireAuth = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authorization token required' });
+    const { userId } = getAuth(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Authorization token required or invalid' });
     }
 
-    const token = authHeader.split(' ')[1];
-
-    // Support a direct local bypass string or verify the JWT token
-    let clerkId;
-    let email;
-
-    if (token.startsWith('mock_token_')) {
-      // Mock token format: mock_token_[clerkId]_[email]
-      const parts = token.replace('mock_token_', '').split('_');
-      clerkId = parts[0];
-      email = parts[1];
-    } else {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        clerkId = decoded.clerkId;
-        email = decoded.email;
-      } catch (err) {
-        return res.status(401).json({ error: 'Invalid or expired authentication token' });
-      }
-    }
-
-    if (!clerkId) {
-      return res.status(401).json({ error: 'Invalid token structure' });
-    }
-
-    // Load the user from MongoDB Compass database
-    let user = await User.findOne({ clerkId });
+    // Load the user from MongoDB database
+    let user = await User.findOne({ clerkId: userId });
     if (!user) {
-      // If the user doesn't exist in MongoDB yet but we have a valid auth context,
-      // we can return a 404 so the client triggers a registration flow, or create a basic one.
-      // The prompt specified that SignUp POST /api/users does the synchronization,
-      // so we'll expect user to exist. If not, we allow it to return 401 or auto-create for robustness.
-      return res.status(401).json({ error: 'User account not synchronized in MongoDB' });
+      try {
+        // Auto-sync User from Clerk if not already synchronized in MongoDB
+        const clerkUser = await clerkClient.users.getUser(userId);
+        const email = clerkUser.emailAddresses[0]?.emailAddress;
+        const fullName = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || email;
+        const avatarUrl = clerkUser.imageUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(fullName)}`;
+
+        // Check if user already exists with this email address
+        if (email) {
+          user = await User.findOne({ email: email.toLowerCase() });
+        }
+
+        if (user) {
+          // Associate the existing user with the new clerkId
+          user.clerkId = userId;
+          await user.save();
+          console.log(`Associated existing user email (${email}) with new clerkId: ${userId}`);
+        } else {
+          user = new User({
+            clerkId: userId,
+            email,
+            fullName,
+            avatarUrl,
+            watchLater: [],
+            notifications: [
+              { message: `Welcome to VibeStream, ${fullName}! Explore our premium library now.` }
+            ]
+          });
+          await user.save();
+          console.log(`Auto-synchronized new user from Clerk to MongoDB: ${fullName} (${email})`);
+        }
+      } catch (syncErr) {
+        console.error('Failed to auto-sync user from Clerk to MongoDB:', syncErr);
+        return res.status(401).json({ error: 'User account not synchronized in MongoDB' });
+      }
     }
 
     req.user = user;

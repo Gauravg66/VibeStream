@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Camera, User, Mail, ShieldCheck, LogOut, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Camera, User, Mail, ShieldCheck, LogOut, CheckCircle, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 
 export default function Profile() {
   const { user, updateProfile, logout } = useAuth();
 
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
+  const [channelName, setChannelName] = useState(user?.channelName || '');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -30,12 +31,16 @@ export default function Profile() {
       setError('Full Name cannot be empty');
       return;
     }
+    if (user?.isCreator && !channelName.trim()) {
+      setError('Channel Name cannot be empty');
+      return;
+    }
 
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      await updateProfile(fullName, avatarUrl);
+      await updateProfile(fullName, avatarUrl, user?.isCreator ? channelName : null);
       setSuccess('Profile ledger updated successfully in MongoDB Compass!');
       
       // Clear toast after 3 seconds
@@ -99,6 +104,9 @@ export default function Profile() {
 
           <div className="text-center sm:text-left pt-14 sm:pt-12 flex-1">
             <h2 className="text-xl font-bold text-white tracking-wide">{user.fullName}</h2>
+            {user.isCreator && (
+              <p className="text-sm font-semibold text-indigo-400 mt-0.5">Channel: {user.channelName}</p>
+            )}
             <p className="text-xs text-slate-500 mt-1">{user.email}</p>
           </div>
         </div>
@@ -154,11 +162,32 @@ export default function Profile() {
                 <input
                   type="email"
                   disabled
-                  className="w-full bg-[#111424] border border-slate-850 rounded-xl py-3 pl-11 pr-4 text-slate-400 text-sm cursor-not-allowed font-medium"
+                  className="w-full bg-[#111424] border border-slate-855 rounded-xl py-3 pl-11 pr-4 text-slate-400 text-sm cursor-not-allowed font-medium"
                   value={user.email}
                 />
               </div>
             </div>
+
+            {/* Editable Channel Name (Only for Creators) */}
+            {user?.isCreator && (
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Channel Name</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                  </span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="My Custom Channel Name"
+                    maxLength={50}
+                    className="w-full bg-[#111424] border border-slate-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-sm font-medium"
+                    value={channelName}
+                    onChange={(e) => setChannelName(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
 
           </div>
 

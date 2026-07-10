@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function NotificationsDrawer({ isOpen, onClose, onRefreshNotifications }) {
-  const { token, user } = useAuth();
+  const { token, user, getFreshToken } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -18,10 +18,15 @@ export default function NotificationsDrawer({ isOpen, onClose, onRefreshNotifica
 
   const fetchNotifications = async () => {
     setLoading(true);
+    const freshToken = await getFreshToken();
+    if (!freshToken) {
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/notifications`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${freshToken}`
         }
       });
       if (res.ok) {
@@ -36,12 +41,13 @@ export default function NotificationsDrawer({ isOpen, onClose, onRefreshNotifica
   };
 
   const handleMarkAllRead = async () => {
-    if (!token || notifications.length === 0) return;
+    const freshToken = await getFreshToken();
+    if (!freshToken || notifications.length === 0) return;
     try {
       const res = await fetch(`${API_URL}/notifications/read`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${freshToken}`
         }
       });
       if (res.ok) {

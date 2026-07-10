@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Clock, Eye, Calendar, UserPlus, Heart, MessageSquare, Send, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
+import { Clock, Eye, Calendar, UserPlus, UserMinus, Heart, MessageSquare, Send, ChevronDown, ChevronUp, ArrowLeft, Loader2 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function VideoPlayer() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { token, user, toggleWatchLater } = useAuth();
+  const { token, user, toggleWatchLater, getFreshToken } = useAuth();
   const { onRefreshNotifications } = useOutletContext();
 
   const [video, setVideo] = useState(null);
@@ -19,11 +19,22 @@ export default function VideoPlayer() {
   const [isPinned, setIsPinned] = useState(false);
   const [toggling, setToggling] = useState(false);
 
-  // Local comments mock state
+  // Like system states
+  const [isLiked, setIsLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(0);
+  const [liking, setLiking] = useState(false);
+
+  // Creator subscription states
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+
+  // Comment states
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [activeReplyId, setActiveReplyId] = useState(null);
+  const [replyText, setReplyText] = useState('');
 
-  // Load video details and recommendation side streams
   useEffect(() => {
     fetchVideoDetails();
     fetchRecommendations();
@@ -39,23 +50,27 @@ export default function VideoPlayer() {
       }
       const data = await res.json();
       setVideo(data.video);
+      setComments(data.video.comments || []);
+      setLikesCount(data.video.likes || 0);
 
       // Verify watch later pin state
       if (user && data.video) {
         setIsPinned(user.watchLater?.includes(data.video._id));
+        setIsLiked(data.video.likedBy?.includes(user._id));
       }
-      
-      // Load mock comments from localStorage for this specific video
-      const savedComments = localStorage.getItem(`comments_${id}`);
-      if (savedComments) {
-        setComments(JSON.parse(savedComments));
-      } else {
-        const initialComments = [
-          { id: '1', author: 'Jane Dev', text: 'This explanation of React state routing is incredible!', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=80&q=80', date: '2 hours ago' },
-          { id: '2', author: 'Markus Tech', text: 'Awesome MP4 stream qualities. Clean UI too.', avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=80&q=80', date: '1 day ago' }
-        ];
-        setComments(initialComments);
-        localStorage.setItem(`comments_${id}`, JSON.stringify(initialComments));
+
+      // Check subscription status
+      const freshToken = token || (await getFreshToken());
+      if (freshToken && data.video.creatorId) {
+        const creatorRes = await fetch(`${API_URL}/users/creator/${data.video.creatorId}`, {
+          headers: {
+            'Authorization': `Bearer ${freshToken}`
+          }
+        });
+        if (creatorRes.ok) {
+          const creatorData = await creatorRes.json();
+          setIsSubscribed(creatorData.isSubscribed);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -70,7 +85,6 @@ export default function VideoPlayer() {
       const res = await fetch(`${API_URL}/videos`);
       if (res.ok) {
         const data = await res.json();
-        // Exclude current video from sidebar list
         const filtered = (data.videos || []).filter((v) => v._id !== id);
         setRecommendations(filtered.slice(0, 5));
       }
@@ -86,7 +100,7 @@ export default function VideoPlayer() {
       const state = await toggleWatchLater(video._id);
       setIsPinned(state);
       if (onRefreshNotifications) {
-        onRefreshNotifications(); // update unread bell alerts
+        onRefreshNotifications();
       }
     } catch (err) {
       console.error(err);
@@ -95,22 +109,109 @@ export default function VideoPlayer() {
     }
   };
 
-  const handleCommentSubmit = (e) => {
+  const handleLikeClick = async () => {
+    const freshToken = await getFreshToken();
+    if (!freshToken) {
+      navigate('/login');
+      return;
+    }
+    if (liking) return;
+    setLiking(true);
+    try {
+      const res = await fetch(`${API_URL}/videos/${id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${freshToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsLiked(data.isLiked);
+        setLikesCount(data.likes);
+      }
+    } catch (err) {
+      console.error('Like toggle error:', err);
+    } finally {
+      setLiking(false);
+    }
+  };
+
+  const handleSubscribeClick = async () => {
+    const freshToken = await getFreshToken();
+    if (!freshToken) {
+      navigate('/login');
+      return;
+    }
+    if (!video || !video.creatorId || subscribing) return;
+    setSubscribing(true);
+    try {
+      const res = await fetch(`${API_URL}/users/${video.creatorId}/subscribe`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${freshToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsSubscribed(data.isSubscribed);
+      }
+    } catch (err) {
+      console.error('Subscribe toggle error:', err);
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  const handleCommentSubmit = async (e) => {
     e.preventDefault();
-    if (!newComment.trim() || !user) return;
+    const freshToken = await getFreshToken();
+    if (!newComment.trim() || !freshToken || submittingComment) return;
 
-    const commentObj = {
-      id: Date.now().toString(),
-      author: user.fullName,
-      text: newComment.trim(),
-      avatar: user.avatarUrl,
-      date: 'Just now'
-    };
+    setSubmittingComment(true);
+    try {
+      const res = await fetch(`${API_URL}/videos/${id}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${freshToken}`
+        },
+        body: JSON.stringify({ text: newComment.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments(data.comments || []);
+        setNewComment('');
+      }
+    } catch (err) {
+      console.error('Comment error:', err);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
-    const updatedComments = [commentObj, ...comments];
-    setComments(updatedComments);
-    localStorage.setItem(`comments_${id}`, JSON.stringify(updatedComments));
-    setNewComment('');
+  const handleReplySubmit = async (e, parentId) => {
+    e.preventDefault();
+    const freshToken = await getFreshToken();
+    if (!replyText.trim() || !freshToken) return;
+
+    try {
+      const res = await fetch(`${API_URL}/videos/${id}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${freshToken}`
+        },
+        body: JSON.stringify({ text: replyText.trim(), parentId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments(data.comments || []);
+        setReplyText('');
+        setActiveReplyId(null);
+      }
+    } catch (err) {
+      console.error('Reply comment error:', err);
+    }
   };
 
   if (loading) {
@@ -137,6 +238,10 @@ export default function VideoPlayer() {
       </div>
     );
   }
+
+  const rootComments = comments.filter(c => !c.parentId);
+  const getReplies = (parentId) => comments.filter(c => c.parentId === parentId);
+  const isCreatorSelf = user && video.creatorId && user._id === video.creatorId;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -182,6 +287,21 @@ export default function VideoPlayer() {
 
             {/* Action Grid Pinned Controls */}
             <div className="flex items-center gap-3">
+              {/* Like Button */}
+              <button
+                onClick={handleLikeClick}
+                disabled={liking}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none ${
+                  isLiked 
+                    ? 'bg-rose-600/20 border border-rose-500 text-rose-400' 
+                    : 'bg-[#111424]/60 border border-slate-800/80 text-slate-300 hover:text-white'
+                }`}
+              >
+                <Heart className={`w-4 h-4 ${isLiked ? 'fill-current text-rose-500' : ''}`} />
+                <span>{likesCount} {likesCount === 1 ? 'Like' : 'Likes'}</span>
+              </button>
+
+              {/* Watch Later */}
               <button
                 onClick={handleWatchLaterClick}
                 disabled={toggling}
@@ -200,17 +320,45 @@ export default function VideoPlayer() {
 
         {/* Creator Identity Anchor */}
         <div className="flex items-center justify-between p-4 rounded-2xl bg-[#111424]/40 border border-slate-800/40">
-          <div className="flex items-center gap-3.5">
+          <div 
+            onClick={() => video.creatorId && navigate(`/creator/${video.creatorId}`)} 
+            className="flex items-center gap-3.5 cursor-pointer group"
+          >
             <img 
               src={video.creator?.avatarUrl} 
               alt={video.creator?.name} 
-              className="w-12 h-12 rounded-full object-cover border border-slate-700"
+              className="w-12 h-12 rounded-full object-cover border border-slate-700 group-hover:border-indigo-500 transition-colors"
             />
             <div>
-              <p className="font-bold text-white text-base">{video.creator?.name}</p>
+              <p className="font-bold text-white text-base group-hover:text-indigo-400 transition-colors">{video.creator?.name}</p>
               <p className="text-xs text-slate-500 font-semibold">Content Creator</p>
             </div>
           </div>
+
+          {/* Subscribe Toggle */}
+          {video.creatorId && !isCreatorSelf && (
+            <button
+              onClick={handleSubscribeClick}
+              disabled={subscribing}
+              className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 focus:outline-none shadow-md ${
+                isSubscribed 
+                  ? 'bg-slate-800/80 hover:bg-slate-750 text-slate-400 border border-slate-800 hover:text-white' 
+                  : 'bg-indigo-600 hover:bg-indigo-550 text-white shadow-indigo-600/10'
+              }`}
+            >
+              {isSubscribed ? (
+                <>
+                  <UserMinus className="w-4 h-4" />
+                  <span>Subscribed</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-4 h-4" />
+                  <span>Subscribe</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Expandable Description Details Card */}
@@ -225,6 +373,15 @@ export default function VideoPlayer() {
           <p className={`text-sm text-slate-400 leading-relaxed ${isDescExpanded ? '' : 'line-clamp-2'}`}>
             {video.description}
           </p>
+          {video.tags && video.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-2">
+              {video.tags.map(tag => (
+                <span key={tag} className="px-2 py-0.5 rounded-md bg-[#111424] border border-slate-850 text-[10px] font-semibold text-indigo-400">
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Interactive Local Comments list */}
@@ -235,7 +392,7 @@ export default function VideoPlayer() {
           </div>
 
           {/* Form */}
-          {user && (
+          {user ? (
             <form onSubmit={handleCommentSubmit} className="flex gap-4">
               <img 
                 src={user.avatarUrl} 
@@ -249,35 +406,124 @@ export default function VideoPlayer() {
                   className="w-full bg-[#111424] border border-slate-800 rounded-xl py-2.5 pl-4 pr-11 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
+                  disabled={submittingComment}
                 />
                 <button 
                   type="submit" 
-                  className="absolute right-2 top-2 p-1 text-slate-400 hover:text-indigo-400 transition-colors"
+                  disabled={submittingComment}
+                  className="absolute right-2 top-2.5 p-1 text-slate-400 hover:text-indigo-400 transition-colors disabled:opacity-50"
                 >
-                  <Send className="w-4 h-4" />
+                  {submittingComment ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             </form>
+          ) : (
+            <p className="text-sm text-slate-500 text-center py-4 bg-[#111424]/20 border border-slate-900 rounded-xl">
+              Please <button onClick={() => navigate('/login')} className="text-indigo-400 font-bold hover:underline">sign in</button> to join the discussion.
+            </p>
           )}
 
           {/* List */}
           <div className="space-y-4">
-            {comments.map((comment) => (
-              <div key={comment.id} className="flex gap-4 p-4 rounded-xl bg-[#111424]/20 border border-slate-900/60">
-                <img 
-                  src={comment.avatar} 
-                  alt={comment.author} 
-                  className="w-9 h-9 rounded-full object-cover border border-slate-800"
-                />
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">{comment.author}</span>
-                    <span className="text-[10px] text-slate-500 font-semibold">{comment.date}</span>
+            {rootComments.map((comment) => {
+              const replies = getReplies(comment._id);
+              return (
+                <div key={comment._id} className="space-y-3">
+                  
+                  {/* Root Card */}
+                  <div className="flex gap-4 p-4 rounded-xl bg-[#111424]/20 border border-slate-900/60">
+                    <img 
+                      src={comment.avatarUrl || 'https://api.dicebear.com/7.x/adventurer/svg?seed=fallback'} 
+                      alt={comment.author} 
+                      className="w-9 h-9 rounded-full object-cover border border-slate-800"
+                    />
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white">{comment.author}</span>
+                          <span className="text-[10px] text-slate-500 font-semibold">
+                            {new Date(comment.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-350 leading-relaxed">{comment.text}</p>
+                      
+                      {/* Actions row */}
+                      {user && (
+                        <div className="pt-1">
+                          <button 
+                            onClick={() => {
+                              setActiveReplyId(activeReplyId === comment._id ? null : comment._id);
+                              setReplyText('');
+                            }}
+                            className="text-xs text-indigo-450 hover:text-indigo-400 font-bold tracking-wide transition-colors focus:outline-none"
+                          >
+                            Reply
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Reply Form */}
+                      {activeReplyId === comment._id && (
+                        <form onSubmit={(e) => handleReplySubmit(e, comment._id)} className="mt-3 flex gap-3">
+                          <input 
+                            type="text"
+                            placeholder={`Reply to ${comment.author}...`}
+                            className="flex-1 bg-[#0A0C16] border border-slate-850 rounded-xl py-1.5 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                            value={replyText}
+                            onChange={(e) => setReplyText(e.target.value)}
+                            required
+                            autoFocus
+                          />
+                          <button 
+                            type="submit"
+                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-550 rounded-xl text-[10px] font-bold uppercase text-white transition-colors"
+                          >
+                            Post
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => setActiveReplyId(null)}
+                            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-[10px] font-bold uppercase text-slate-400 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed">{comment.text}</p>
+
+                  {/* Replies List */}
+                  {replies.length > 0 && (
+                    <div className="pl-12 border-l-2 border-slate-900 space-y-3 mt-1 ml-4">
+                      {replies.map((reply) => (
+                        <div key={reply._id} className="flex gap-4 p-3 rounded-xl bg-[#111424]/10 border border-slate-950/20">
+                          <img 
+                            src={reply.avatarUrl || 'https://api.dicebear.com/7.x/adventurer/svg?seed=fallback'} 
+                            alt={reply.author} 
+                            className="w-8 h-8 rounded-full object-cover border border-slate-800"
+                          />
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-white">{reply.author}</span>
+                              <span className="text-[10px] text-slate-500 font-semibold">
+                                {new Date(reply.createdAt).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <p className="text-sm text-slate-350 leading-relaxed">{reply.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

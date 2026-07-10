@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useSignIn } from '@clerk/clerk-react';
 import { useAuth } from '../context/AuthContext';
 import { Mail, ShieldCheck, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -10,11 +13,18 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
-  const [receivedOtp, setReceivedOtp] = useState(''); // Dev helper to display OTP
 
-  const { sendOtp, verifyOtp } = useAuth();
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const otpRefs = useRef([]);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
 
   // Auto-focus first OTP input when step changes to 2
   useEffect(() => {
@@ -25,7 +35,7 @@ export default function Login() {
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
-    if (!email) return;
+    if (!email || !isLoaded) return;
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -37,12 +47,23 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const res = await sendOtp(email);
+      const { supportedFirstFactors } = await signIn.create({ identifier: email });
+      
+      const emailCodeFactor = supportedFirstFactors.find(
+        (f) => f.strategy === 'email_code'
+      );
+      
+      if (!emailCodeFactor) {
+        throw new Error('Email verification code is not configured on your Clerk instance. Please enable it in your Clerk dashboard.');
+      }
+
+      await signIn.prepareFirstFactor({
+        strategy: 'email_code',
+        emailAddressId: emailCodeFactor.emailAddressId
+      });
+
       setStep(2);
       setInfoMessage('Verification code sent to your email.');
-      if (res.devOtp) {
-        setReceivedOtp(res.devOtp); // Capture OTP for easy local demonstration
-      }
     } catch (err) {
       setError(err.message || 'Failed to send verification code. Try again.');
     } finally {
@@ -108,19 +129,21 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const result = await verifyOtp(email, otpCode);
-      setInfoMessage('Authentication successful!');
+      const result = await signIn.attemptFirstFactor({
+        strategy: 'email_code',
+        code: otpCode
+      });
       
-      // Clerk-like Redirection Flow
-      setTimeout(() => {
-        if (result.userExists) {
-          // Hard redirection to Home Page
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
+        setInfoMessage('Authentication successful! Redirecting...');
+        
+        setTimeout(() => {
           window.location.href = '/';
-        } else {
-          // Redirection to complete user details sync registration
-          navigate('/register', { state: { email: result.email, clerkId: result.clerkId } });
-        }
-      }, 800);
+        }, 800);
+      } else {
+        throw new Error(`Sign in status: ${result.status}`);
+      }
     } catch (err) {
       setError(err.message || 'Invalid or expired OTP. Please try again.');
     } finally {
@@ -133,7 +156,6 @@ export default function Login() {
     setOtp(['', '', '', '', '', '']);
     setError('');
     setInfoMessage('');
-    setReceivedOtp('');
   };
 
   return (
@@ -154,14 +176,6 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Development Helper Toast */}
-        {receivedOtp && (
-          <div className="mb-6 p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-center">
-            <p className="text-xs text-indigo-300 font-medium">DEMO VERIFICATION CODE</p>
-            <p className="text-2xl font-bold text-white tracking-widest mt-1">{receivedOtp}</p>
-            <p className="text-[10px] text-indigo-400/80 mt-1">Copy and paste this code to proceed</p>
-          </div>
-        )}
 
         {/* Status Alerts */}
         {error && (

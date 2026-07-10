@@ -1,89 +1,63 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth as useClerkAuth } from '@clerk/clerk-react';
 
 const AuthContext = createContext(null);
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(localStorage.getItem('stream_session_token') || null);
+  const { isLoaded, isSignedIn, userId, getToken, signOut } = useClerkAuth();
+  const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [watchLaterCount, setWatchLaterCount] = useState(0);
 
-  // Fetch user profile on startup if token is cached
+  // Sync / load profile when Clerk authentication state changes
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!token) {
+      if (!isLoaded) return;
+      if (!isSignedIn) {
+        setToken(null);
+        setUser(null);
         setLoading(false);
         return;
       }
       try {
+        const sessionToken = await getToken();
+        setToken(sessionToken);
+        
         const res = await fetch(`${API_URL}/users/profile`, {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${sessionToken}`
           }
         });
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
-          setWatchLaterCount(data.user.watchLater?.length || 0);
+          setWatchLaterCount(data.user.watchLaterUnreadCount || 0);
         } else {
-          // Token expired or invalid
-          logout();
+          // If the profile fetch fails but Clerk is authenticated,
+          // let user state remain null so that they can register/sync.
+          setUser(null);
         }
       } catch (err) {
         console.error('Failed to fetch user profile:', err);
+        setUser(null);
       } finally {
         setLoading(false);
       }
     };
     fetchProfile();
-  }, [token]);
+  }, [isLoaded, isSignedIn, userId]);
 
-  // Request OTP from Clerk/Mock backend
-  const sendOtp = async (email) => {
-    const res = await fetch(`${API_URL}/auth/mock-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to dispatch OTP');
-    return data;
-  };
-
-  // Verify OTP and capture session token
-  const verifyOtp = async (email, otp) => {
-    const res = await fetch(`${API_URL}/auth/mock-verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, otp })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to verify OTP');
-
-    // Cache session token
-    localStorage.setItem('stream_session_token', data.token);
-    setToken(data.token);
-
-    if (data.userExists && data.user) {
-      setUser(data.user);
-      setWatchLaterCount(data.user.watchLater?.length || 0);
-    }
-
-    return {
-      userExists: data.userExists,
-      clerkId: data.clerkId,
-      email: data.email
-    };
-  };
-
-  // Sync user register form data to MongoDB Compass
+  // Sync user register form data to MongoDB
   const registerUser = async (fullName, email, clerkId) => {
+    const sessionToken = await getToken();
     const res = await fetch(`${API_URL}/users`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionToken}`
       },
       body: JSON.stringify({ fullName, email, clerkId })
     });
@@ -91,20 +65,25 @@ export const AuthProvider = ({ children }) => {
     if (!res.ok) throw new Error(data.error || 'Failed to sync registration');
 
     setUser(data.user);
-    setWatchLaterCount(data.user.watchLater?.length || 0);
+    setWatchLaterCount(data.user.watchLaterUnreadCount || 0);
     return data.user;
   };
 
   // Update profile details
-  const updateProfile = async (fullName, avatarUrl) => {
-    if (!token) return;
+  const updateProfile = async (fullName, avatarUrl, channelName = null) => {
+    if (!isSignedIn) return;
+    const sessionToken = await getToken();
+    const bodyObj = { fullName, avatarUrl };
+    if (channelName !== null) {
+      bodyObj.channelName = channelName;
+    }
     const res = await fetch(`${API_URL}/users/profile`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${sessionToken}`
       },
-      body: JSON.stringify({ fullName, avatarUrl })
+      body: JSON.stringify(bodyObj)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to update profile');
@@ -114,19 +93,19 @@ export const AuthProvider = ({ children }) => {
 
   // Toggle watch-later video state
   const toggleWatchLater = async (videoId) => {
-    if (!token) return false;
+    if (!isSignedIn) return false;
     try {
+      const sessionToken = await getToken();
       const res = await fetch(`${API_URL}/videos/${videoId}/watch-later`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${sessionToken}`
         }
       });
       if (res.ok) {
         const data = await res.json();
         setWatchLaterCount(data.watchLaterCount);
         
-        // Update local user watchLater array
         if (user) {
           const updatedWatchLater = [...user.watchLater];
           const idx = updatedWatchLater.indexOf(videoId);
@@ -145,9 +124,40 @@ export const AuthProvider = ({ children }) => {
     return false;
   };
 
+  // Upgrade user to creator status
+  const becomeCreator = async (channelName, channelDescription) => {
+    if (!isSignedIn) return;
+    const sessionToken = await getToken();
+    const res = await fetch(`${API_URL}/users/profile/become-creator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionToken}`
+      },
+      body: JSON.stringify({ channelName, channelDescription })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to become creator');
+    setUser(data.user);
+    return data.user;
+  };
+
+  const getFreshToken = async () => {
+    try {
+      return await getToken();
+    } catch (err) {
+      console.error('Error getting fresh token:', err);
+      return null;
+    }
+  };
+
+  const clearWatchLaterBadge = () => {
+    setWatchLaterCount(0);
+  };
+
   // Sign out method
-  const logout = () => {
-    localStorage.removeItem('stream_session_token');
+  const logout = async () => {
+    await signOut();
     setToken(null);
     setUser(null);
     setWatchLaterCount(0);
@@ -156,14 +166,15 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={{
       token,
+      getFreshToken,
       user,
       loading,
-      isAuthenticated: !!token && !!user,
+      isAuthenticated: isSignedIn && !!user,
       watchLaterCount,
-      sendOtp,
-      verifyOtp,
+      clearWatchLaterBadge,
       registerUser,
       updateProfile,
+      becomeCreator,
       toggleWatchLater,
       logout
     }}>

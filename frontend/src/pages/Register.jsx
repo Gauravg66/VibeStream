@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useSignUp } from '@clerk/clerk-react';
 import { useAuth } from '../context/AuthContext';
 import { UserPlus, User, Mail, ShieldCheck, RefreshCw, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function Register() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { sendOtp, verifyOtp, registerUser } = useAuth();
+  const { registerUser, isAuthenticated } = useAuth();
+  const { isLoaded, signUp, setActive } = useSignUp();
 
   // Route state passes verified details if user came from /login
   const stateClerkId = location.state?.clerkId || '';
@@ -20,9 +22,15 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
-  const [receivedOtp, setReceivedOtp] = useState(''); // Dev helper for OTP
 
   const otpRefs = useRef([]);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
 
   useEffect(() => {
     if (step === 2 && otpRefs.current[0]) {
@@ -33,7 +41,7 @@ export default function Register() {
   // Handle direct sign up (Name + Email) - sends OTP
   const handleSignUpTrigger = async (e) => {
     e.preventDefault();
-    if (!fullName.trim() || !email) return;
+    if (!fullName.trim() || !email || !isLoaded) return;
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -45,12 +53,14 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      const res = await sendOtp(email);
+      await signUp.create({
+        emailAddress: email,
+      });
+      await signUp.prepareEmailAddressVerification({
+        strategy: 'email_code'
+      });
       setStep(2);
       setInfoMessage('Verification OTP sent to your email.');
-      if (res.devOtp) {
-        setReceivedOtp(res.devOtp);
-      }
     } catch (err) {
       setError(err.message || 'Failed to dispatch verification code');
     } finally {
@@ -114,18 +124,18 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      const result = await verifyOtp(email, otpCode);
-      setClerkId(result.clerkId);
+      const result = await signUp.attemptEmailAddressVerification({
+        code: otpCode
+      });
       
-      if (result.userExists) {
-        // Already exists in MongoDB Compass
-        setInfoMessage('Account already exists. Redirecting to Home...');
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 800);
+      if (result.status === 'complete') {
+        // Activate Clerk session
+        await setActive({ session: result.createdSessionId });
+        
+        // Sync user details to backend MongoDB database
+        await handleSyncRegistration(result.createdUserId, email);
       } else {
-        // Perform synchronization
-        await handleSyncRegistration(result.clerkId, email);
+        throw new Error(`Sign up status: ${result.status}`);
       }
     } catch (err) {
       setError(err.message || 'OTP validation failed');
@@ -141,7 +151,6 @@ export default function Register() {
       setInfoMessage('Account created and synchronized successfully!');
       
       setTimeout(() => {
-        // Redirection: Instantly executes a router navigation pass directly to the App Home Page
         window.location.href = '/';
       }, 800);
     } catch (err) {
@@ -188,14 +197,6 @@ export default function Register() {
           </p>
         </div>
 
-        {/* Development Helper Toast */}
-        {receivedOtp && step === 2 && (
-          <div className="mb-6 p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-center">
-            <p className="text-xs text-indigo-300 font-medium">DEMO VERIFICATION CODE</p>
-            <p className="text-2xl font-bold text-white tracking-widest mt-1">{receivedOtp}</p>
-            <p className="text-[10px] text-indigo-400/80 mt-1">Copy and paste this code to proceed</p>
-          </div>
-        )}
 
         {/* Status Alerts */}
         {error && (

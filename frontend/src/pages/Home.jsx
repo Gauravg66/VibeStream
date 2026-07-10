@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import VideoCard from '../components/VideoCard';
-import { Search, Compass, Clock, Flame, Star, AlertCircle, RefreshCw } from 'lucide-react';
+import { Search, Compass, Clock, Flame, Star, AlertCircle, RefreshCw, ThumbsUp } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function Home() {
-  const { token } = useAuth();
+  const { token, getFreshToken, clearWatchLaterBadge } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { onRefreshNotifications } = useOutletContext();
@@ -35,8 +35,9 @@ export default function Home() {
       let url = `${API_URL}/videos`;
       const headers = {};
 
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const freshToken = token ? (await getFreshToken()) : null;
+      if (freshToken) {
+        headers['Authorization'] = `Bearer ${freshToken}`;
       }
 
       // 1. Trending API route mapping
@@ -64,6 +65,9 @@ export default function Home() {
 
       const data = await res.json();
       setVideos(data.videos || []);
+      if (filter === 'watchLater') {
+        clearWatchLaterBadge();
+      }
     } catch (err) {
       console.error(err);
       setError(err.message || 'Unable to connect to the video streaming API.');
@@ -85,6 +89,7 @@ export default function Home() {
   const getFeedTitle = () => {
     if (searchQ) return `Search Results for "${searchQ}"`;
     if (filter === 'watchLater') return 'My Private Watch Later List';
+    if (filter === 'liked') return 'My Liked Videos';
     if (filter === 'trending') return 'Trending Videos';
     if (filter === 'recommended') return 'Recommended for You';
     return `${activeCategory} Videos`;
@@ -92,6 +97,7 @@ export default function Home() {
 
   const getFeedIcon = () => {
     if (filter === 'watchLater') return <Clock className="w-5 h-5 text-indigo-400" />;
+    if (filter === 'liked') return <ThumbsUp className="w-5 h-5 text-indigo-400" />;
     if (filter === 'trending') return <Flame className="w-5 h-5 text-red-400 animate-pulse" />;
     if (filter === 'recommended') return <Star className="w-5 h-5 text-yellow-400" />;
     return <Compass className="w-5 h-5 text-indigo-400" />;

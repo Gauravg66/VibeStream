@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Clock, Bell, Star, Flame, LogOut, Video, Compass } from 'lucide-react';
+import { Clock, Bell, Star, Flame, LogOut, Video, Compass, ThumbsUp } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -131,6 +131,23 @@ export default function Sidebar({ onOpenNotifications, unreadCount, onRefreshUnr
               </span>
             )}
           </button>
+
+          {/* Liked Videos Collection */}
+          {user && (
+            <button
+              onClick={() => handleFilterClick('liked')}
+              className={`w-full flex items-center justify-between p-3 rounded-xl text-sm font-medium transition-all focus:outline-none ${
+                isFilterActive('liked')
+                  ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/20'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <ThumbsUp className="w-4 h-4" />
+                <span>Liked Videos</span>
+              </div>
+            </button>
+          )}
 
           {/* Notifications Drawer Switch */}
           <button

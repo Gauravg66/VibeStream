@@ -7,6 +7,9 @@ import Register from './pages/Register';
 import Home from './pages/Home';
 import VideoPlayer from './pages/VideoPlayer';
 import Profile from './pages/Profile';
+import CreatorProfile from './pages/CreatorProfile';
+import CreatorStudio from './pages/CreatorStudio';
+import SearchResults from './pages/SearchResults';
 import './App.css';
 
 export default function App() {
@@ -23,6 +26,9 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/video/:id" element={<VideoPlayer />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/creator/:id" element={<CreatorProfile />} />
+            <Route path="/creator-studio" element={<CreatorStudio />} />
+            <Route path="/search" element={<SearchResults />} />
           </Route>
 
           {/* Catch-all Fallback Redirection */}

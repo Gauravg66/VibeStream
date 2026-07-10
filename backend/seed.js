@@ -1,174 +1,163 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import Video from './models/Video.js';
+import User from './models/User.js';
 
 dotenv.config();
 
 const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/videostream';
 
-const sampleVideos = [
-  {
-    title: "Adventures of Bunny: The Meadow Escape",
-    description: "Witness the stunning visual journey of a giant, gentle rabbit whose daily routine gets turned upside down when a gang of small forest creatures tries to disrupt his peace. An animation masterclass.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1585110396000-c9ffd4e4b308?auto=format&fit=crop&w=800&q=80",
-    category: "Nature",
-    views: 45209,
-    engagementScore: 92,
-    creator: {
-      name: "Blender Foundation",
-      avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "9:56"
-  },
-  {
-    title: "Synthesizing the Machine Mind",
-    description: "Explore the frontiers of artificial intelligence and machine learning as experts detail the deep neural network structures that power modern neural synthesis.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
-    category: "Tech",
-    views: 120530,
-    engagementScore: 98,
-    creator: {
-      name: "Cybernetics Lab",
-      avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "10:53"
-  },
-  {
-    title: "Cyberpunk Chronicles: Tears of Steel",
-    description: "A dystopian sci-fi story set in an alternate future Amsterdam, where a group of cybernetic fighters attempt to rescue the city from giant robotic spiders.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1515621061946-eff1c2a352bd?auto=format&fit=crop&w=800&q=80",
-    category: "Tech",
-    views: 89412,
-    engagementScore: 85,
-    creator: {
-      name: "Blender Studios",
-      avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "12:14"
-  },
-  {
-    title: "Retro Synthwave Sunset Session",
-    description: "Chill out with this high-energy synthwave visualizer. Perfect for late-night programming sessions, driving, or just relaxing with lo-fi electronic frequencies.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=800&q=80",
-    category: "Music",
-    views: 243900,
-    engagementScore: 99,
-    creator: {
-      name: "Neon Rider",
-      avatarUrl: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "0:15"
-  },
-  {
-    title: "Apex Legends Speedrun Mechanics",
-    description: "A breakdown of physics exploits, slide-jumping, and momentum vectors that allow professional speedrunners to cross massive maps in seconds.",
-    videoUrl: "https://commondatachannel.blogspot.com" !== "" ? "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" : "",
-    thumbnailUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80",
-    category: "Gaming",
-    views: 18902,
-    engagementScore: 78,
-    creator: {
-      name: "Glitch Hunter",
-      avatarUrl: "https://images.unsplash.com/photo-1628157582853-a796fa650a6a?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "0:15"
-  },
-  {
-    title: "Off-Road Bullrun: Mud & Mountains",
-    description: "Get dirty with a high-octane 4x4 racing expedition through the muddy peaks of the Rocky Mountains. Filmed in glorious 4K resolution.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80",
-    category: "Nature",
-    views: 7421,
-    engagementScore: 61,
-    creator: {
-      name: "Wild Trails",
-      avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "0:59"
-  },
-  {
-    title: "Urban Cruise: Testing the AWD Outback",
-    description: "We take the new AWD crossover vehicle out onto both wet city streets and dusty dirt trails to see if it lives up to the adventure branding.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1506015391300-4802dc74de2e?auto=format&fit=crop&w=800&q=80",
-    category: "Nature",
-    views: 9283,
-    engagementScore: 70,
-    creator: {
-      name: "Traction Weekly",
-      avatarUrl: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "9:54"
-  },
-  {
-    title: "Building a React Web Application from Scratch",
-    description: "A step-by-step masterclass demonstrating modern React patterns, styling systems, Tailwind integrations, and custom state management architecture.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=800&q=80",
-    category: "Tech",
-    views: 189400,
-    engagementScore: 97,
-    creator: {
-      name: "Antigravity Dev",
-      avatarUrl: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "0:15"
-  },
-  {
-    title: "Sub-Zero Alpine Survival Guide",
-    description: "Deep in the sub-zero peaks of the Alps, we learn how to locate shelter, identify edible vegetation, and spark a campfire in freezing rain conditions.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80",
-    category: "Nature",
-    views: 31200,
-    engagementScore: 89,
-    creator: {
-      name: "Wild Trails",
-      avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "0:15"
-  },
-  {
-    title: "Electronic Beats & Visualizer Session",
-    description: "A visually striking electronic chill session featuring custom digital animation overlays synced with high-fidelity, relaxing synthesizer waves.",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
-    thumbnailUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
-    category: "Music",
-    views: 301290,
-    engagementScore: 99,
-    creator: {
-      name: "Synth Master",
-      avatarUrl: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80"
-    },
-    duration: "0:15"
+const deleteLocalFile = (fileUrl) => {
+  if (!fileUrl) return;
+  // If it's a local upload
+  if (fileUrl.includes('/uploads/')) {
+    const parts = fileUrl.split('/uploads/');
+    const filename = parts[parts.length - 1];
+    const filePath = path.join('uploads', filename);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log(`[Disk Cleanup] Deleted local file: ${filePath}`);
+      } catch (err) {
+        console.error(`[Disk Cleanup] Failed to delete local file ${filePath}:`, err);
+      }
+    }
   }
-];
+};
 
-async function seed() {
+async function cleanup() {
   try {
-    console.log("Connecting to MongoDB Compass:", mongoUri);
+    console.log("Connecting to database:", mongoUri);
     await mongoose.connect(mongoUri);
     console.log("Connected successfully!");
 
-    console.log("Clearing existing video records...");
-    await Video.deleteMany({});
+    // 1. Identify Mock Targets
+    console.log("Identifying mock creators...");
+    const mockUsers = await User.find({ clerkId: /^clerk_mock_/ });
+    const mockUserIds = mockUsers.map(u => u._id);
+    console.log(`Found ${mockUsers.length} mock creator(s) to remove.`);
 
-    console.log("Inserting new seed video records...");
-    const inserted = await Video.insertMany(sampleVideos);
-    console.log(`Successfully seeded ${inserted.length} videos!`);
+    console.log("Identifying mock/demo videos...");
+    const mockVideos = await Video.find({
+      $or: [
+        { creatorId: { $in: mockUserIds } },
+        { videoUrl: /^https:\/\/commondatastorage\.googleapis\.com/ }
+      ]
+    });
+    const mockVideoIds = mockVideos.map(v => v._id);
+    console.log(`Found ${mockVideos.length} mock video(s) to remove.`);
 
+    // 2. Purge Mock Docs & Disk Cleanup
+    console.log("Starting disk cleanup for deleted videos...");
+    for (const v of mockVideos) {
+      deleteLocalFile(v.videoUrl);
+      deleteLocalFile(v.thumbnailUrl);
+    }
+
+    console.log("Purging mock videos from DB...");
+    const videoDeleteResult = await Video.deleteMany({ _id: { $in: mockVideoIds } });
+    console.log(`Deleted ${videoDeleteResult.deletedCount} video(s) from database.`);
+
+    console.log("Purging mock creators from DB...");
+    const userDeleteResult = await User.deleteMany({ _id: { $in: mockUserIds } });
+    console.log(`Deleted ${userDeleteResult.deletedCount} user(s) from database.`);
+
+    // 3. Clean Up Real User Lists & Arrays
+    console.log("Cleaning up references in real user accounts...");
+    const realUsers = await User.find({ _id: { $nin: mockUserIds } });
+    for (const user of realUsers) {
+      let modified = false;
+
+      // Filter watchLater
+      const oldWatchLaterLen = user.watchLater.length;
+      user.watchLater = user.watchLater.filter(id => !mockVideoIds.some(mId => mId.equals(id)));
+      if (user.watchLater.length !== oldWatchLaterLen) {
+        const removedCount = oldWatchLaterLen - user.watchLater.length;
+        user.watchLaterUnreadCount = Math.max(0, (user.watchLaterUnreadCount || 0) - removedCount);
+        modified = true;
+      }
+
+      // Filter subscribers
+      const oldSubscribersLen = user.subscribers.length;
+      user.subscribers = user.subscribers.filter(id => !mockUserIds.some(mId => mId.equals(id)));
+      if (user.subscribers.length !== oldSubscribersLen) {
+        modified = true;
+      }
+
+      // Filter subscriptions
+      const oldSubscriptionsLen = user.subscriptions.length;
+      user.subscriptions = user.subscriptions.filter(id => !mockUserIds.some(mId => mId.equals(id)));
+      if (user.subscriptions.length !== oldSubscriptionsLen) {
+        modified = true;
+      }
+
+      // Filter notifications (remove welcomes/updates referencing mock data)
+      const oldNotificationsLen = user.notifications.length;
+      user.notifications = user.notifications.filter(notif => {
+        const isWelcome = notif.message.includes('Welcome to');
+        const mentionsMockUser = mockUsers.some(mu => notif.message.includes(mu.fullName) || notif.message.includes(mu.channelName));
+        const mentionsMockVideo = mockVideos.some(mv => notif.message.includes(mv.title));
+        return !(isWelcome || mentionsMockUser || mentionsMockVideo);
+      });
+      if (user.notifications.length !== oldNotificationsLen) {
+        modified = true;
+      }
+
+      if (modified) {
+        await user.save();
+        console.log(`Saved cleaned up user: ${user.fullName}`);
+      }
+    }
+
+    // 4. Clean Up Real Video Lists & Arrays & Recalculate Counters
+    console.log("Cleaning up comments/likes and recalculating counters for remaining videos...");
+    const realVideos = await Video.find({ _id: { $nin: mockVideoIds } });
+    for (const video of realVideos) {
+      let modified = false;
+
+      // Filter likedBy
+      const oldLikedByLen = video.likedBy.length;
+      video.likedBy = video.likedBy.filter(id => !mockUserIds.some(mId => mId.equals(id)));
+      if (video.likedBy.length !== oldLikedByLen) {
+        video.likes = video.likedBy.length;
+        modified = true;
+      }
+
+      // Filter comments: First pass, remove comments by mock users
+      const oldCommentsLen = video.comments.length;
+      const commentsAfterFirstPass = video.comments.filter(comment => {
+        return !mockUserIds.some(mId => mId.equals(comment.userId));
+      });
+
+      // Second pass: Cascading orphaned comments loop
+      const finalComments = commentsAfterFirstPass.filter(comment => {
+        if (comment.parentId !== null) {
+          const parentExists = commentsAfterFirstPass.some(c => c._id.equals(comment.parentId));
+          return parentExists;
+        }
+        return true;
+      });
+
+      if (finalComments.length !== oldCommentsLen) {
+        video.comments = finalComments;
+        modified = true;
+      }
+
+      if (modified) {
+        await video.save();
+        console.log(`Saved cleaned up video: ${video.title}`);
+      }
+    }
+
+    console.log("Database and disk cleanup completed successfully!");
     await mongoose.connection.close();
-    console.log("Database connection closed.");
     process.exit(0);
   } catch (error) {
-    console.error("Database seeding failed:", error);
+    console.error("Cleanup failed:", error);
     process.exit(1);
   }
 }
 
-seed();
+cleanup();
